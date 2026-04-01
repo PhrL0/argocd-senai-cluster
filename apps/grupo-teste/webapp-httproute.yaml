@@ -8,7 +8,7 @@ metadata:
 spec:
   parentRefs:
     - name: cluster-gateway-gateway # Nome do seu Gateway existente
-      namespace: default
+      namespace: envoy-gateway-system
   hostnames:
     - "grupo-teste.internal"
   rules:
