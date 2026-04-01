@@ -1,0 +1,73 @@
+---
+title: Estrutura do Monorepo — facul-cluster
+---
+flowchart TD
+    ROOT["📁 facul-cluster\nÚnico ponto de verdade do cluster.\nO ArgoCD garante que tudo aqui\nreflete o que roda no servidor."]
+
+    ROOT --> APPS
+    ROOT --> INFRA
+    ROOT --> DOCS
+
+    %% ── APPS ──────────────────────────────────────────
+    APPS["📂 apps/\nOnde cada grupo trabalha.\nCada grupo mexe APENAS\nna própria pasta."]
+
+    APPS --> GRUPO["📂 nome-do-grupo/\nEspaço de trabalho do grupo.\nO nome deve ser igual\nao namespace criado pelo admin.\nEx: grupo-alpha, tcc-backend-2024"]
+
+    GRUPO --> DEPLOY["📄 deployment.yaml\nDefine O QUE vai rodar.\n─────────────────\n• Imagem Docker a usar\n• Número de réplicas\n• Variáveis de ambiente\n• Limites de CPU e memória\n─────────────────\n⚠ namespace = nome da pasta\n⚠ containerPort = porta real do código\n⚠ resources dentro das cotas do namespace"]
+
+    GRUPO --> SVC["📄 service.yaml\nDefine COMO CHEGAR na app\ndentro do cluster.\n─────────────────\n• Balanceador interno\n• Encontra pods pelo label\n─────────────────\n⚠ selector.app = labels.app do deployment\n⚠ targetPort = containerPort do deployment"]
+
+    GRUPO --> ROUTE["📄 httproute.yaml\nDefine COMO A APP É ACESSADA\npela rede da faculdade.\n─────────────────\n• Configura o hostname de acesso\n• Roteia para o service correto\n─────────────────\n⚠ parentRefs: NÃO alterar\n⚠ hostname padrão: grupo.facul.internal\n⚠ backendRefs.name = nome do service\n⚠ backendRefs.port = port do service"]
+
+    %% ── INFRASTRUCTURE ────────────────────────────────
+    INFRA["📂 infrastructure/\n🔒 Gerenciada APENAS pelo admin.\nContém os recursos que sustentam\no cluster inteiro.\nGrupos NÃO abrem PRs aqui."]
+
+    INFRA --> NS_DIR["📂 namespaces/"]
+    INFRA --> GW_DIR["📂 gateway/"]
+
+    NS_DIR --> NS_FILE["📄 nome-do-grupo.yaml\nCriado pelo admin ao cadastrar\num novo grupo.\n─────────────────\nNamespace\n  Cria o espaço isolado do grupo.\n  Label facul/allowed=true autoriza\n  o namespace a criar rotas no Gateway.\n─────────────────\nResourceQuota\n  Teto máximo de CPU, memória\n  e volumes que o grupo pode usar.\n─────────────────\nLimitRange\n  Valores padrão por container\n  caso o grupo não especifique."]
+
+    GW_DIR --> GWC["📄 gatewayclass.yaml\nDefine qual implementação\nde Gateway o cluster usa.\nCriado uma única vez,\nnunca muda.\n─────────────────\nAponta para o Traefik como\ncontrolador do Gateway."]
+
+    GW_DIR --> GW["📄 gateway.yaml\nPonto de entrada do cluster\nna rede da faculdade.\n─────────────────\n• Escuta requisições na porta 80\n• Distribui para os grupos\n  via HTTPRoutes\n• allowedRoutes: só namespaces\n  com label facul/allowed=true\n  podem anexar rotas aqui\n─────────────────\n⚠ Apenas o admin altera este arquivo"]
+
+    %% ── DOCS ──────────────────────────────────────────
+    DOCS["📂 docs/\nDocumentação para os grupos.\nDúvidas sobre deploy, manifests\ne limites de recursos."]
+
+    DOCS --> HOWTO["📄 como-fazer-deploy.md\nGuia de onboarding\npara novos grupos."]
+
+    %% ── FLUXO ─────────────────────────────────────────
+    subgraph FLUXO ["🔄 Fluxo de trabalho"]
+        direction TB
+        F1["Admin cria namespace\n+ ArgoCD Application\npara o novo grupo"]
+        F2["Grupo escreve os yamls\nem apps/nome-do-grupo/"]
+        F3["Grupo abre PR\nno repositório"]
+        F4["Admin revisa\ne faz merge na main"]
+        F5["ArgoCD detecta\na mudança em ~30s"]
+        F6["App disponível em\ngrupo.facul.internal ✅"]
+
+        F1 --> F2 --> F3 --> F4 --> F5 --> F6
+    end
+
+    %% ── REGRAS ────────────────────────────────────────
+    subgraph REGRAS ["⚠️ Regras importantes"]
+        direction TB
+        R1["🔑 Nunca commite credenciais nos yamls\nsenhas, tokens e API keys devem\nser tratados com o admin"]
+        R2["🗂 Cada grupo mexe apenas\nna própria pasta em apps/"]
+        R3["🏷 O campo namespace em todos os arquivos\ndeve ser sempre o nome da pasta do grupo"]
+        R4["📊 Mantenha resources dentro das cotas\nContainers sem limites herdam\nos valores do LimitRange"]
+    end
+
+    %% ── ESTILOS ───────────────────────────────────────
+    classDef root        fill:#1e293b,stroke:#475569,color:#f8fafc
+    classDef section     fill:#0f172a,stroke:#334155,color:#94a3b8
+    classDef adminOnly   fill:#450a0a,stroke:#991b1b,color:#fca5a5
+    classDef groupFile   fill:#052e16,stroke:#166534,color:#86efac
+    classDef infra       fill:#1e1b4b,stroke:#4338ca,color:#a5b4fc
+    classDef neutral     fill:#1c1917,stroke:#44403c,color:#d6d3d1
+
+    class ROOT root
+    class APPS,GRUPO section
+    class DEPLOY,SVC,ROUTE groupFile
+    class INFRA,NS_DIR,GW_DIR,NS_FILE,GWC,GW adminOnly
+    class DOCS,HOWTO neutral
